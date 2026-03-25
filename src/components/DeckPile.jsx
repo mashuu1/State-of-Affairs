@@ -1,0 +1,57 @@
+import { motion } from 'framer-motion';
+import { useGame } from '../context/GameContext';
+import CardComponent from './CardComponent';
+
+export default function DeckPile() {
+  const { state } = useGame();
+  
+  const deckCount = state.deck.length;
+
+  return (
+    <div className="relative w-[90px] sm:w-[120px] drop-shadow-2xl flex items-center justify-center" style={{ aspectRatio: '330 / 539' }}>
+      {state.deck.map((card, idx) => {
+        // Fix deck moving bug: base offset on distance from the BOTTOM of the deck
+        // so remaining cards don't change their physical offset when the top card is drawn.
+        const reversedIdx = deckCount - 1 - idx;
+        const offsetY = reversedIdx * 1.5;
+        const offsetX = reversedIdx * 0.5;
+        
+        return (
+          <motion.div
+            key={card.id}
+            layoutId={card.id}
+            className="absolute drop-shadow-sm"
+            style={{
+              width: '100%',
+              height: '100%',
+              bottom: `${offsetY}px`,
+              left: `${offsetX}px`,
+              zIndex: deckCount - idx,
+            }}
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          >
+            <motion.div
+              initial={{ rotateY: 180 }}
+              animate={{ rotateY: 180 }}
+              style={{ transformStyle: 'preserve-3d', width: '100%', height: '100%' }}
+            >
+              <CardComponent card={card} inDeck={true} />
+            </motion.div>
+          </motion.div>
+        );
+      })}
+      
+      {deckCount > 0 && (
+        <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 min-w-[max-content] bg-black/80 text-white text-[10px] px-3 py-1 rounded border border-slate-600 font-black tracking-widest z-50 shadow-md whitespace-nowrap">
+          DECK: {deckCount}
+        </div>
+      )}
+      
+      {deckCount === 0 && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center border-2 border-dashed border-slate-700/50 rounded-[4px] text-slate-500 bg-black/20 text-xs font-black">
+          <span>NO CARDS</span>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,25 @@
+/* ═══ Outer wrapper: centers the 16:9 game container ═══ */
+.game-container-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100vw;
+  height: 100vh;
+  background-color: #020617; /* very dark slate */
+  overflow: hidden;
+}
+
+/* ═══ The game container itself: 16:9 ratio, responsive ═══ */
+.game-container {
+  /* Dynamically sizes to 90vw or scales based on height, whichever is smaller */
+  width: min(90vw, calc(90vh * 16 / 9));
+  /* Capped at 1920px */
+  max-width: 1920px;
+  /* Strict 16:9 aspect ratio */
+  aspect-ratio: 16 / 9;
+  /* 12px rounded corners */
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  position: relative;
+}
