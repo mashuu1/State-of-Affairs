@@ -3,7 +3,7 @@ import { useGame } from '../context/GameContext';
 import CardComponent from './CardComponent';
 
 export default function AgendaBoard({ isAI = false }) {
-  const { state, dragToSlot } = useGame();
+  const { state, dragToSlot, upgradeInfrastructure } = useGame();
   const [dragOverSlot, setDragOverSlot] = useState(null);
 
   const slots = isAI ? state.aiSlots : state.agendaSlots;
@@ -30,24 +30,28 @@ export default function AgendaBoard({ isAI = false }) {
   };
 
   return (
-    <div className="flex items-center justify-center gap-3">
+    <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
       {slots.map((card, idx) => (
         <div
           key={idx}
-          className={`
-            w-[90px] sm:w-[120px] rounded-[4px] border-2 transition-all duration-200
-            ${card ? 'border-transparent bg-transparent' : 'border-dashed border-slate-600 bg-slate-900/50'}
-            ${dragOverSlot === idx ? 'slot-highlight scale-105' : ''}
-            ${!card && !isAI ? 'hover:border-slate-500' : ''}
-            flex flex-col items-center justify-center
-          `}
+          className={[
+            'arena-slot',
+            'w-[92px] sm:w-[124px]',
+            card ? 'arena-slot--occupied' : 'arena-slot--empty',
+            dragOverSlot === idx ? 'slot-highlight scale-[1.03]' : '',
+            !card && !isAI ? 'arena-slot--droppable' : '',
+          ].join(' ')}
           style={{ aspectRatio: '330 / 539' }}
           onDragOver={(e) => handleDragOver(e, idx)}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, idx)}
         >
           {card ? (
-            <CardComponent card={card} onBoard={true} />
+            <CardComponent
+              card={card}
+              onBoard={true}
+              onClick={!isAI ? () => upgradeInfrastructure(idx) : undefined}
+            />
           ) : (
             <div className="text-center">
               <span className="text-2xl text-slate-700 font-bold">{idx + 1}</span>

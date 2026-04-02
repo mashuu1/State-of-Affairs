@@ -1,14 +1,19 @@
 export default function CardComponent({ card, onClick, draggable = false, onBoard = false, inDeck = false }) {
   const isInfra = card.type === 'infrastructure';
   const isSupport = card.type === 'support';
+  const isAction = card.type === 'action';
+  const isReform = isSupport || (isAction && card.actionType === 'reform');
+  const isPolicy = isAction && card.actionType === 'policy';
   
-  // Color scheme per card type
-  const bgColorClass = isInfra ? "bg-[#71717a]" : isSupport ? "bg-[#22c55e]" : "bg-[#22c55e]";
-  const borderColor = isInfra ? "border-[#3f3f46]" : isSupport ? "border-[#14532d]" : "border-[#14532d]";
+  const cardClass =
+    isInfra ? 'gov-card--infra' : isPolicy ? 'gov-card--policy' : isReform ? 'gov-card--reform' : 'gov-card--neutral';
 
   // On board: show status
   const isPending = onBoard && card.status === 'pending_audit';
   const isCorrupt = onBoard && card.corruptionToken;
+  const isUpgraded = onBoard && isInfra && card.status === 'built' && card.upgraded;
+  const canUpgrade = onBoard && isInfra && card.status === 'built' && !card.corruptionToken && !card.upgraded;
+  const isFaceDown = onBoard && (card.status === 'pending_audit' || card.status === 'pending_player_audit');
 
   const handleDragStart = (e) => {
     if (!draggable) return;
@@ -41,11 +46,6 @@ export default function CardComponent({ card, onClick, draggable = false, onBoar
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const pixelTextStyle = {
-    textShadow: '1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 2px 2px 0 rgba(0,0,0,0.8)',
-    letterSpacing: '0.5px'
-  };
-
   // Build cost/reward display text
   const getCostText = () => {
     if (isInfra) {
@@ -73,11 +73,17 @@ export default function CardComponent({ card, onClick, draggable = false, onBoar
 
   return (
     <div
-      className={`
-        relative select-none outline-none
-        ${onBoard ? 'w-full max-h-full' : inDeck ? 'w-full h-full' : 'w-[120px] sm:w-[150px] mx-1 flex-shrink-0'}
-        ${draggable && !inDeck ? 'cursor-grab active:cursor-grabbing hover:-translate-y-1 transition-transform' : ''}
-      `}
+      className={[
+        'gov-card',
+        cardClass,
+        'relative select-none outline-none',
+        onBoard ? 'w-full max-h-full' : inDeck ? 'w-full h-full' : 'w-[120px] sm:w-[150px] mx-1 flex-shrink-0',
+        onBoard ? 'gov-card--board' : inDeck ? 'gov-card--deck' : 'gov-card--hand',
+        draggable && !inDeck ? 'cursor-grab active:cursor-grabbing' : '',
+        onClick ? 'cursor-pointer' : '',
+        isFaceDown ? 'gov-card--facedown' : '',
+        isCorrupt ? 'gov-card--corrupt' : '',
+      ].join(' ')}
       style={{ 
         aspectRatio: '330 / 539',
         transformStyle: 'preserve-3d'
@@ -85,17 +91,21 @@ export default function CardComponent({ card, onClick, draggable = false, onBoar
       draggable={draggable && isInfra}
       onDragStart={handleDragStart}
       onClick={() => onClick && onClick(card)}
+      data-card-type={card.type}
+      data-action-type={card.actionType || ''}
+      data-status={card.status || ''}
     >
       {/* ════ FRONT FACE ════ */}
       <div 
-        className={`absolute inset-0 rounded-[4px] border-[2px] ${borderColor} ${bgColorClass}
-          ${isPending ? 'pending-shimmer' : ''}
-          ${isCorrupt ? 'shadow-[0_0_10px_rgba(239,68,68,0.8)]' : ''}
-          ${!inDeck && !onBoard ? 'shadow-[2px_2px_0_rgba(0,0,0,0.5)] hover:shadow-[4px_4px_0_rgba(0,0,0,0.5)]' : ''}
-          ${inDeck ? 'shadow-[1px_1px_0_rgba(0,0,0,0.5)]' : ''}`}
+        className={[
+          'gov-card-face',
+          'gov-card-face--front',
+          'absolute inset-0 rounded-[10px] border-[1px]',
+          isPending ? 'pending-shimmer' : '',
+        ].join(' ')}
         style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
       >
-        <div className="absolute inset-0 flex flex-col items-center justify-between overflow-hidden rounded-[2px]">
+        <div className="absolute inset-0 flex flex-col items-center justify-between overflow-hidden rounded-[10px]">
         {/* Corruption timer */}
         {isCorrupt && card.timer !== null && (
           <div className="absolute top-1 right-1 corruption-pulse z-20">
@@ -107,8 +117,56 @@ export default function CardComponent({ card, onClick, draggable = false, onBoar
 
         {/* Pending overlay */}
         {isPending && (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60 rounded-[2px] z-20 backdrop-blur-[1px]">
-            <span className="text-[12px] text-amber-400 font-black tracking-wider drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] text-center">PENDING<br/>AUDIT</span>
+          <div className="absolute inset-0 flex items-center justify-center bg-black/35 rounded-[10px] z-20 backdrop-blur-[2px]">
+            <span className="text-[12px] text-amber-400 font-black tracking-wider drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] text-center">
+              {card.pendingAction === 'upgrade' ? (
+                <>
+                  PENDING
+                  <br />
+                  UPGRADE
+                  <br />
+                  AUDIT
+                </>
+              ) : (
+                <>
+                  PENDING
+                  <br />
+                  AUDIT
+                </>
+              )}
+            </span>
+          </div>
+        )}
+
+        {/* Upgrade badges */}
+        {(isUpgraded || canUpgrade) && !isPending && (
+          <div className="absolute top-1 left-1 z-20">
+            <span className={`text-[9px] px-1 py-0.5 rounded font-black drop-shadow bg-black/70 ${
+              isUpgraded ? 'text-cyan-300' : 'text-amber-300'
+            }`}>
+              {isUpgraded ? `LV ${(card.level || 2)}` : '▲ UPGRADE (8💰)'}
+            </span>
+          </div>
+        )}
+
+        {/* Category glyphs / stamps */}
+        {!isFaceDown && (
+          <div className="absolute top-1 right-1 z-20 flex items-center gap-1">
+            {isReform && (
+              <span className="gov-chip gov-chip--cert" aria-hidden>
+                CERTIFIED
+              </span>
+            )}
+            {isPolicy && (
+              <span className="gov-chip gov-chip--policy" aria-hidden title="Policy">
+                §
+              </span>
+            )}
+            {isInfra && (
+              <span className="gov-chip gov-chip--blueprint" aria-hidden title="Blueprint">
+                ⌁
+              </span>
+            )}
           </div>
         )}
 
@@ -117,43 +175,43 @@ export default function CardComponent({ card, onClick, draggable = false, onBoar
           
           {/* Top Header: Name */}
           <div 
-            className="text-[11px] font-black text-white uppercase leading-tight mt-[2%]"
-            style={pixelTextStyle}
+            className="gov-card-title text-[12px] font-black text-white uppercase leading-tight mt-[2%]"
           >
             {card.name}
           </div>
           
           {/* Middle: Effect and Description */}
-          <div className="flex-1 flex flex-col justify-center items-center w-full px-1">
-            {/* Cost display */}
-            <div 
-              className="text-[9px] font-black text-amber-300 tracking-wider mb-1 px-1.5 py-0.5 bg-black/40 rounded"
-              style={pixelTextStyle}
+          <div className="gov-card-body">
+            <div
+              className="gov-card-cost"
+              style={{ fontFamily: "var(--font-display)", letterSpacing: "0.12em" }}
             >
               {getCostText()}
             </div>
 
-            <div 
-              className="text-[12px] font-black text-white tracking-wider mb-1"
-              style={pixelTextStyle}
+            <div
+              className="gov-card-brief gov-heading"
             >
-              EFFECT
+              {isInfra ? 'PROJECT BRIEF' : isPolicy ? 'POLICY BRIEF' : 'REFORM BRIEF'}
             </div>
-            <div 
-              className="text-[9px] font-black text-white leading-snug px-1 text-balance"
-              style={pixelTextStyle}
+
+            <div className="gov-card-divider" />
+
+            <div
+              className="gov-card-desc"
             >
               {card.description}
             </div>
 
-            {/* Show reward for infrastructure */}
             {isInfra && (
-              <div className="mt-1.5 w-full">
-                <div className="text-[8px] font-black text-emerald-300 leading-snug" style={pixelTextStyle}>
-                  ✓ Honest: {card.honestReward}
+              <div className="gov-card-rewards">
+                <div className="gov-card-reward gov-card-reward--good">
+                  <span>✓</span>
+                  <span>Honest: {card.honestReward}</span>
                 </div>
-                <div className="text-[8px] font-black text-red-300 leading-snug" style={pixelTextStyle}>
-                  ✗ Corrupt: {card.corruptReward}
+                <div className="gov-card-reward gov-card-reward--bad">
+                  <span>✗</span>
+                  <span>Corrupt: {card.corruptReward}</span>
                 </div>
               </div>
             )}
@@ -184,18 +242,30 @@ export default function CardComponent({ card, onClick, draggable = false, onBoar
 
       {/* ════ BACK FACE ════ */}
       <div 
-        className={`absolute inset-0 rounded-[4px] bg-transparent
-          ${!inDeck && !onBoard ? 'shadow-[2px_2px_0_rgba(0,0,0,0.5)]' : ''}
-          ${inDeck ? 'shadow-[1px_1px_0_rgba(0,0,0,0.5)]' : ''}`}
+        className={[
+          'gov-card-face',
+          'gov-card-face--back',
+          'absolute inset-0 rounded-[10px]',
+        ].join(' ')}
         style={{
           backfaceVisibility: 'hidden', 
           WebkitBackfaceVisibility: 'hidden',
           transform: 'rotateY(180deg)',
-          backgroundImage: "url('/PJBG.png')",
-          backgroundSize: '150%',
-          backgroundPosition: 'center',
         }}
       />
+
+      {(isFaceDown || isPending) && (
+        <div className="gov-card-stamp" aria-hidden>
+          <div className="gov-card-stamp-inner">
+            <div className="gov-card-stamp-top gov-heading">
+              {card.pendingAction === 'upgrade' ? 'CLASSIFIED UPGRADE' : 'CONFIDENTIAL'}
+            </div>
+            <div className="gov-card-stamp-sub">
+              {isInfra ? 'INFRASTRUCTURE DOSSIER' : isPolicy ? 'POLICY FILE' : 'REFORM FILE'}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

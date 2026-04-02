@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useGame } from '../context/GameContext';
+import { AnimatePresence, motion } from 'framer-motion';
 
 export default function AuditOverlay() {
   const { state, resolveAudit } = useGame();
@@ -21,17 +22,32 @@ export default function AuditOverlay() {
 
   // Show result for a moment after audit resolves
   if (state.auditResult && state.phase === 'play') {
+    const kind = state.auditResult.caught
+      ? 'scandal'
+      : state.auditResult.audited
+        ? 'integrity'
+        : 'pass';
+
     return (
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 animate-fadeIn">
-        <div className={`px-6 py-4 rounded-xl border-2 shadow-2xl max-w-xs text-center ${
-          state.auditResult.caught
-            ? 'bg-red-900/90 border-red-500'
-            : 'bg-emerald-900/90 border-emerald-500'
-        }`}>
-          <p className="text-xs text-slate-300 italic mb-2">"{state.auditResult.flavor}"</p>
-          <p className="text-sm font-bold text-white">{state.auditResult.effects}</p>
-        </div>
-      </div>
+      <AnimatePresence>
+        <motion.div
+          key="audit-result"
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.98 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+          className="gov-event-wrap"
+        >
+          <div className={`gov-event ${kind === 'scandal' ? 'gov-event--scandal gov-shake' : kind === 'integrity' ? 'gov-event--integrity' : 'gov-event--pass'}`}>
+            <div className="gov-event-kicker gov-heading">
+              {kind === 'scandal' ? 'SCANDAL!' : kind === 'integrity' ? 'INTEGRITY BONUS' : 'NO AUDIT'}
+            </div>
+            <div className="gov-event-quote">“{state.auditResult.flavor}”</div>
+            <div className="gov-event-body">{state.auditResult.effects}</div>
+            {kind === 'integrity' && <div className="gov-sparkles" aria-hidden />}
+          </div>
+        </motion.div>
+      </AnimatePresence>
     );
   }
 
@@ -39,17 +55,14 @@ export default function AuditOverlay() {
   if (state.phase === 'audit' && stage === 'thinking') {
     return (
       <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center">
-        <div className="bg-slate-800 border-2 border-amber-500 rounded-xl p-6 max-w-xs text-center animate-fadeIn shadow-2xl">
-          <div className="text-3xl mb-3 animate-bounce">🔍</div>
-          <h3 className="text-base font-bold text-amber-300 mb-2">AI is investigating...</h3>
-          <p className="text-xs text-slate-400">The opposition is deciding whether to audit your project.</p>
-          <div className="mt-3 flex justify-center gap-1">
+        <div className="gov-modal gov-modal--audit">
+          <div className="gov-modal-scan" />
+          <div className="gov-modal-top gov-heading">AUDIT REVIEW</div>
+          <div className="gov-modal-title gov-heading">Opposition Committee</div>
+          <div className="gov-modal-sub">Cross-checking procurement reports, vendor bids, and site inspections…</div>
+          <div className="gov-modal-dots" aria-hidden>
             {[0, 1, 2].map(i => (
-              <div
-                key={i}
-                className="w-2 h-2 bg-amber-400 rounded-full animate-bounce"
-                style={{ animationDelay: `${i * 0.15}s` }}
-              />
+              <span key={i} style={{ animationDelay: `${i * 0.12}s` }} />
             ))}
           </div>
         </div>

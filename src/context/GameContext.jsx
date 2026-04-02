@@ -1,5 +1,13 @@
-import { createContext, useContext, useReducer, useCallback, useRef } from 'react';
+import { createContext, useContext, useReducer, useCallback, useRef, useState } from 'react';
 import { createDeck } from '../data/deck';
+import {
+  AGENDA_SLOT_COUNT,
+  DP_WIN_THRESHOLD,
+  TRUST_MAX,
+  UPGRADE_COST,
+  UPGRADE_DP_REWARD,
+  warnIfGameConfigInconsistent,
+} from '../constants/game';
 
 const GameContext = createContext(null);
 
@@ -19,15 +27,17 @@ const PASS_FLAVORS = [
   "A quiet news cycle lets this one slide.",
 ];
 
+warnIfGameConfigInconsistent();
+
 // ── Initial State Factory ──
 function createInitialState() {
   const deck = createDeck();
   const hand = deck.splice(0, 5);
   return {
-    publicTrust: 5,
+    publicTrust: TRUST_MAX,
     budget: 0,
     developmentPoints: 0,
-    agendaSlots: [null, null, null],
+    agendaSlots: Array.from({ length: AGENDA_SLOT_COUNT }, () => null),
     deck,
     hand,
     turnNumber: 1,
@@ -41,10 +51,10 @@ function createInitialState() {
     turnStarted: false,
     freeAuditNext: false,  // Whistleblower effect
     // AI state (display only)
-    aiTrust: 5,
+    aiTrust: TRUST_MAX,
     aiBudget: 0,
     aiDP: 0,
-    aiSlots: [null, null, null],
+    aiSlots: Array.from({ length: AGENDA_SLOT_COUNT }, () => null),
   };
 }
 
@@ -108,7 +118,16 @@ function gameReducer(state, action) {
     case 'BUILD_HONEST': {
       const cost = state.pendingCard.honestCost || 3;
       if (state.budget < cost) return state;
-      const card = { ...state.pendingCard, status: 'pending_audit', buildType: 'honest', corruptionToken: false, timer: null };
+      const card = {
+        ...state.pendingCard,
+        status: 'pending_audit',
+        pendingAction: 'build',
+        buildType: 'honest',
+        corruptionToken: false,
+        timer: null,
+        level: 1,
+        upgraded: false,
+      };
       const newSlots = [...state.agendaSlots];
       newSlots[state.pendingSlotIndex] = card;
       const newHand = state.hand.filter(c => c.id !== state.pendingCard.id);
@@ -126,7 +145,16 @@ function gameReducer(state, action) {
     case 'BUILD_CORRUPT': {
       const cost = state.pendingCard.corruptCost || 1;
       if (state.budget < cost) return state;
-      const card = { ...state.pendingCard, status: 'pending_audit', buildType: 'corrupt', corruptionToken: true, timer: 3 };
+      const card = {
+        ...state.pendingCard,
+        status: 'pending_audit',
+        pendingAction: 'build',
+        buildType: 'corrupt',
+        corruptionToken: true,
+        timer: 3,
+        level: 1,
+        upgraded: false,
+      };
       const newSlots = [...state.agendaSlots];
       newSlots[state.pendingSlotIndex] = card;
       const newHand = state.hand.filter(c => c.id !== state.pendingCard.id);
@@ -150,6 +178,29 @@ function gameReducer(state, action) {
       };
     }
 
+    case 'UPGRADE_INFRA': {
+      if (state.phase !== 'play' || !state.turnStarted) return state;
+      const { slotIndex } = action.payload;
+      const current = state.agendaSlots[slotIndex];
+      if (!current || current.type !== 'infrastructure') return state;
+      if (current.status !== 'built') return state;
+      if (current.corruptionToken) return state; // must be "cleared" first
+      if (current.upgraded) return state;
+      if (state.budget < UPGRADE_COST) return state;
+
+      const newSlots = [...state.agendaSlots];
+      newSlots[slotIndex] = { ...current, status: 'pending_audit', pendingAction: 'upgrade' };
+
+      return {
+        ...state,
+        budget: state.budget - UPGRADE_COST,
+        agendaSlots: newSlots,
+        phase: 'audit',
+        auditResult: null,
+        playerAuditResult: null,
+      };
+    }
+
     case 'PLAYER_RESOLVE_AUDIT': {
       const { investigate } = action.payload;
       const newSlots = [...state.aiSlots];
@@ -161,6 +212,7 @@ function gameReducer(state, action) {
       if (idx === -1) return { ...state, phase: 'play' }; 
       
       const placedCard = { ...newSlots[idx] };
+      const isUpgrade = placedCard.pendingAction === 'upgrade';
       let effects = '';
       let caught = false;
 
@@ -169,19 +221,34 @@ function gameReducer(state, action) {
           caught = true;
           newSlots[idx] = null;
           aiTrust = Math.max(0, aiTrust - 3);
-          playerTrust = Math.min(5, playerTrust + 1);
-          effects = "Caught! AI project destroyed. AI Trust -3. You gained +1 Trust.";
+          playerTrust = Math.min(TRUST_MAX, playerTrust + 1);
+          effects = isUpgrade
+            ? "Caught! Audit found corruption during the upgrade. AI project destroyed. AI Trust -3. You gained +1 Trust."
+            : "Caught! AI project destroyed. AI Trust -3. You gained +1 Trust.";
         } else {
           placedCard.status = 'built';
-          aiDP += 1;
-          aiTrust = Math.min(5, aiTrust + 1);
+          if (isUpgrade) {
+            aiDP += UPGRADE_DP_REWARD;
+            placedCard.upgraded = true;
+            placedCard.level = (placedCard.level || 1) + 1;
+          } else {
+            aiDP += 1;
+          }
+          aiTrust = Math.min(TRUST_MAX, aiTrust + 1);
           playerTrust = Math.max(0, playerTrust - 1);
           newSlots[idx] = placedCard;
-          effects = "Innocent! AI project verified. AI DP +1, AI Trust +1. You lost 1 Trust.";
+          effects = isUpgrade
+            ? `Innocent! Upgrade verified. AI DP +${UPGRADE_DP_REWARD}, AI Trust +1. You lost 1 Trust.`
+            : "Innocent! AI project verified. AI DP +1, AI Trust +1. You lost 1 Trust.";
         }
       } else {
         placedCard.status = 'built';
-        if (placedCard.buildType === 'honest') {
+        if (isUpgrade) {
+          aiDP += UPGRADE_DP_REWARD;
+          placedCard.upgraded = true;
+          placedCard.level = (placedCard.level || 1) + 1;
+          effects = `No audit. AI upgraded successfully. AI gains +${UPGRADE_DP_REWARD} DP.`;
+        } else if (placedCard.buildType === 'honest') {
           aiDP += 1;
           effects = "No audit. AI built honestly. AI gains +1 DP.";
         } else {
@@ -193,10 +260,10 @@ function gameReducer(state, action) {
 
       let gameResult = state.gameResult;
       let phase = 'play';
-      if (state.developmentPoints >= 4) { gameResult = 'victory'; phase = 'gameover'; }
+      if (state.developmentPoints >= DP_WIN_THRESHOLD) { gameResult = 'victory'; phase = 'gameover'; }
       else if (playerTrust <= 0) { gameResult = 'defeat_impeachment'; phase = 'gameover'; }
       else if (aiTrust <= 0) { gameResult = 'victory'; phase = 'gameover'; }
-      else if (aiDP >= 4) { gameResult = 'defeat_termlimit'; phase = 'gameover'; }
+      else if (aiDP >= DP_WIN_THRESHOLD) { gameResult = 'defeat_termlimit'; phase = 'gameover'; }
 
       return {
         ...state,
@@ -211,7 +278,7 @@ function gameReducer(state, action) {
     }
 
     case 'RESOLVE_AUDIT': {
-      const { audited, caught } = action.payload;
+      const { audited } = action.payload;
       const newSlots = [...state.agendaSlots];
       let dp = state.developmentPoints;
       let trust = state.publicTrust;
@@ -222,25 +289,41 @@ function gameReducer(state, action) {
       if (idx === -1) return state;
 
       const placedCard = { ...newSlots[idx] };
+      const isUpgrade = placedCard.pendingAction === 'upgrade';
 
       if (audited) {
         if (placedCard.buildType === 'corrupt') {
           // CAUGHT cheating
           newSlots[idx] = null;
           trust = Math.max(0, trust - 3);
-          effects = `Caught! ${placedCard.name} destroyed. Trust -3.`;
+          effects = isUpgrade
+            ? `Caught! Audit found corruption during the upgrade. ${placedCard.name} demolished. Trust -3.`
+            : `Caught! ${placedCard.name} destroyed. Trust -3.`;
         } else {
-          // Innocent — honest build audited
+          // Innocent — honest build/upgrade audited
           placedCard.status = 'built';
-          dp += 1;
-          trust = Math.min(5, trust + 1);
+          if (isUpgrade) {
+            dp += UPGRADE_DP_REWARD;
+            placedCard.upgraded = true;
+            placedCard.level = (placedCard.level || 1) + 1;
+          } else {
+            dp += 1;
+          }
+          trust = Math.min(TRUST_MAX, trust + 1);
           newSlots[idx] = placedCard;
-          effects = `Cleared! ${placedCard.name} verified. DP +1, Trust +1.`;
+          effects = isUpgrade
+            ? `Cleared! Upgrade verified. DP +${UPGRADE_DP_REWARD}, Trust +1.`
+            : `Cleared! ${placedCard.name} verified. DP +1, Trust +1.`;
         }
       } else {
         // AI passed on audit
         placedCard.status = 'built';
-        if (placedCard.buildType === 'honest') {
+        if (isUpgrade) {
+          dp += UPGRADE_DP_REWARD;
+          placedCard.upgraded = true;
+          placedCard.level = (placedCard.level || 1) + 1;
+          effects = `No audit. Upgrade completed. DP +${UPGRADE_DP_REWARD}.`;
+        } else if (placedCard.buildType === 'honest') {
           dp += 1;
           effects = `No audit. ${placedCard.name} built honestly. DP +1.`;
         } else {
@@ -256,7 +339,7 @@ function gameReducer(state, action) {
 
       let gameResult = null;
       let phase = 'play';
-      if (dp >= 4) { gameResult = 'victory'; phase = 'gameover'; }
+      if (dp >= DP_WIN_THRESHOLD) { gameResult = 'victory'; phase = 'gameover'; }
       if (trust <= 0) { gameResult = 'defeat_impeachment'; phase = 'gameover'; }
 
       return {
@@ -340,7 +423,7 @@ function gameReducer(state, action) {
         }
       } else if (card.actionType === 'policy') {
         if (card.effect === 'budget') budget += card.value;
-        if (card.effect === 'trust') trust = Math.min(5, trust + card.value);
+        if (card.effect === 'trust') trust = Math.min(TRUST_MAX, trust + card.value);
       }
 
       let gameResult = state.gameResult;
@@ -395,11 +478,19 @@ function gameReducer(state, action) {
       if (emptyAiSlot !== -1 && aiBudget >= 1) {
         const aiHonest = Math.random() > 0.4; // 60% honest
         if (aiHonest && aiBudget >= 3) {
-          aiSlots[emptyAiSlot] = { type: 'infrastructure', name: 'AI Project', status: 'pending_player_audit', buildType: 'honest', corruptionToken: false, timer: null };
+          aiSlots[emptyAiSlot] = { type: 'infrastructure', name: 'AI Project', status: 'pending_player_audit', pendingAction: 'build', buildType: 'honest', corruptionToken: false, timer: null, level: 1, upgraded: false };
           aiBudget -= 3;
         } else if (aiBudget >= 1) {
-          aiSlots[emptyAiSlot] = { type: 'infrastructure', name: 'AI Project', status: 'pending_player_audit', buildType: 'corrupt', corruptionToken: true, timer: 3 };
+          aiSlots[emptyAiSlot] = { type: 'infrastructure', name: 'AI Project', status: 'pending_player_audit', pendingAction: 'build', buildType: 'corrupt', corruptionToken: true, timer: 3, level: 1, upgraded: false };
           aiBudget -= 1;
+        }
+      }
+      // If AI couldn't build (no empty slots), it may try to upgrade a built, cleared project.
+      if (!aiSlots.some(s => s && s.status === 'pending_player_audit')) {
+        const upgradableIdx = aiSlots.findIndex(s => s && s.status === 'built' && !s.corruptionToken && !s.upgraded);
+        if (upgradableIdx !== -1 && aiBudget >= UPGRADE_COST && Math.random() < 0.35) {
+          aiSlots[upgradableIdx] = { ...aiSlots[upgradableIdx], status: 'pending_player_audit', pendingAction: 'upgrade' };
+          aiBudget -= UPGRADE_COST;
         }
       }
       // AI decay
@@ -420,10 +511,10 @@ function gameReducer(state, action) {
 
       let gameResult = null;
       let phase = 'play';
-      if (dp >= 4) { gameResult = 'victory'; phase = 'gameover'; }
+      if (dp >= DP_WIN_THRESHOLD) { gameResult = 'victory'; phase = 'gameover'; }
       else if (trust <= 0) { gameResult = 'defeat_impeachment'; phase = 'gameover'; }
       else if (aiTrust <= 0) { gameResult = 'victory'; phase = 'gameover'; }
-      else if (aiDP >= 4) { gameResult = 'defeat_termlimit'; phase = 'gameover'; }
+      else if (aiDP >= DP_WIN_THRESHOLD) { gameResult = 'defeat_termlimit'; phase = 'gameover'; }
       else if (state.deck.length === 0) {
         gameResult = dp >= aiDP ? 'victory_termlimit' : 'defeat_termlimit';
         phase = 'gameover';
@@ -473,6 +564,13 @@ function runAiAudit(budget) {
 // ── Provider ──
 export function GameProvider({ children }) {
   const [state, dispatch] = useReducer(gameReducer, null, createInitialState);
+  
+  // Toast System
+  const [toast, setToast] = useState(null);
+  const showToast = useCallback((msg, type = 'error') => {
+    setToast({ msg, type, id: Date.now() });
+    setTimeout(() => setToast(current => current?.id === toast?.id ? null : current), 3000);
+  }, [toast]);
 
   const startTurn = useCallback(() => dispatch({ type: 'START_TURN' }), []);
   const dragToSlot = useCallback((card, slotIndex) => dispatch({ type: 'DRAG_TO_SLOT', payload: { card, slotIndex } }), []);
@@ -484,7 +582,7 @@ export function GameProvider({ children }) {
   stateRef.current = state;
   const resolveAudit = useCallback(() => {
     const audited = runAiAudit(stateRef.current.budget);
-    dispatch({ type: 'RESOLVE_AUDIT', payload: { audited, caught: audited } });
+    dispatch({ type: 'RESOLVE_AUDIT', payload: { audited } });
   }, []);
 
   const playerResolveAudit = useCallback((investigate) => {
@@ -497,14 +595,40 @@ export function GameProvider({ children }) {
   const playSupport = useCallback((card, targetSlotIndex) =>
     dispatch({ type: 'PLAY_SUPPORT', payload: { card, targetSlotIndex } }), []);
 
+  const upgradeInfrastructure = useCallback((slotIndex) => {
+    if (state.phase !== 'play' || !state.turnStarted) {
+      showToast('Start your turn before upgrading.', 'error');
+      return;
+    }
+    const current = state.agendaSlots[slotIndex];
+    if (!current || current.type !== 'infrastructure' || current.status !== 'built') {
+      showToast('Only built infrastructure can be upgraded.', 'error');
+      return;
+    }
+    if (current.corruptionToken) {
+      showToast('Clear corruption before upgrading this project.', 'error');
+      return;
+    }
+    if (current.upgraded) {
+      showToast('This project is already upgraded.', 'error');
+      return;
+    }
+    if (state.budget < UPGRADE_COST) {
+      showToast(`Not enough budget to upgrade (need ${UPGRADE_COST}).`, 'error');
+      return;
+    }
+    dispatch({ type: 'UPGRADE_INFRA', payload: { slotIndex } });
+  }, [state, showToast]);
+
   const endTurn = useCallback(() => dispatch({ type: 'END_TURN' }), []);
   const restart = useCallback(() => dispatch({ type: 'RESTART' }), []);
 
   return (
     <GameContext.Provider value={{
-      state,
+      state, toast, showToast,
       startTurn, dragToSlot, buildHonest, buildCorrupt, cancelDilemma,
       resolveAudit, playerResolveAudit, playAction, playSupport, endTurn, restart,
+      upgradeInfrastructure,
     }}>
       {children}
     </GameContext.Provider>

@@ -5,7 +5,7 @@
   align-items: center;
   width: 100vw;
   height: 100vh;
-  background-color: #020617; /* very dark slate */
+  background-color: #070b14;
   overflow: hidden;
 }
 
@@ -20,6 +20,9 @@
   /* 12px rounded corners */
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 30px 120px rgba(0, 0, 0, 0.75),
+    0 0 0 1px rgba(148, 163, 184, 0.14),
+    0 0 0 6px rgba(2, 6, 23, 0.7);
   position: relative;
 }

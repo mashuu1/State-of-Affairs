@@ -42,13 +42,13 @@ export default function DeckPile() {
       })}
       
       {deckCount > 0 && (
-        <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 min-w-[max-content] bg-black/80 text-white text-[10px] px-3 py-1 rounded border border-slate-600 font-black tracking-widest z-50 shadow-md whitespace-nowrap">
-          DECK: {deckCount}
+        <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 min-w-[max-content] gov-deck-tag z-50 whitespace-nowrap">
+          DECK • {deckCount}
         </div>
       )}
       
       {deckCount === 0 && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center border-2 border-dashed border-slate-700/50 rounded-[4px] text-slate-500 bg-black/20 text-xs font-black">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gov-deck-empty text-xs font-black">
           <span>NO CARDS</span>
         </div>
       )}

@@ -3,26 +3,25 @@ import { useGame } from '../context/GameContext';
 import CardComponent from './CardComponent';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export default function HandArea() {
-  const { state, playAction, playSupport } = useGame();
-  const [selectingTarget, setSelectingTarget] = useState(null); // card needing a corrupt slot target
+export default function HandArea({ onSelectCard, dimmed = false }) {
+  const { state, playAction, playSupport, showToast } = useGame();
+  const [selectingTarget, setSelectingTarget] = useState(null);
 
   const handleCardClick = (card) => {
+    onSelectCard && onSelectCard(card);
     if (state.phase !== 'play' || !state.turnStarted) return;
 
     if (card.type === 'support') {
-      // Support/Utility cards
       if (card.effect === 'remove_corruption') {
-        // Check if player can afford it
-        if (card.cost > 0 && state.budget < card.cost) return;
-        // Need to select a corrupt slot
+        if (card.cost > 0 && state.budget < card.cost) return showToast('Not enough budget!', 'error');
         const hasCorrupt = state.agendaSlots.some(s => s && s.corruptionToken);
         if (hasCorrupt) {
           setSelectingTarget(card);
+        } else {
+          showToast('No corrupt buildings to target!', 'info');
         }
       } else {
-        // Whistleblower & Economic Boom — no target needed
-        if (card.cost > 0 && state.budget < card.cost) return;
+        if (card.cost > 0 && state.budget < card.cost) return showToast('Not enough budget!', 'error');
         playSupport(card);
       }
     } else if (card.type === 'action') {
@@ -30,12 +29,13 @@ export default function HandArea() {
         const hasCorrupt = state.agendaSlots.some(s => s && s.corruptionToken);
         if (hasCorrupt) {
           setSelectingTarget(card);
+        } else {
+          showToast('No corrupt buildings to target!', 'info');
         }
       } else if (card.actionType === 'policy') {
         playAction(card);
       }
     }
-    // Infrastructure cards are dragged, not clicked
   };
 
   const handleTargetSelect = (slotIdx) => {
@@ -74,23 +74,40 @@ export default function HandArea() {
         </div>
       )}
 
-      {/* Hand */}
-      <div className="flex items-end justify-center gap-2">
+      {/* Hand — cards peek from bottom */}
+      <div className={`hand-tray ${dimmed ? 'hand-tray--dimmed' : ''}`}>
         <AnimatePresence>
-          {state.hand.map((card) => (
+          {state.hand.map((card, i) => {
+            const total = state.hand.length;
+            const center = (total - 1) / 2;
+            const offset = i - center;
+            const fan = Math.min(12, Math.max(6, total * 1.6));
+            const rotate = offset * (fan / Math.max(1, total - 1));
+            const spacing =
+              total <= 3 ? 118 :
+              total <= 5 ? 96 :
+              total <= 7 ? 78 :
+              66;
+            const x = offset * spacing;
+            const y = Math.abs(offset) * 3;
+
+            return (
             <motion.div 
               key={card.id} 
               layoutId={card.id}
-              initial={{ opacity: 0, scale: 0.5, y: -50 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.8, y: -50 }}
+              initial={{ opacity: 0, scale: 0.5, y: 80 }}
+              animate={{ opacity: 1, scale: 1, x, y, rotate, filter: 'none' }}
+              exit={{ opacity: 0, scale: 0.8, y: 80 }}
               transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              className="hand-card-slot"
+              style={{ zIndex: 10 + i, transformOrigin: '50% 100%' }}
             >
               <motion.div
                 initial={{ rotateY: 180 }}
                 animate={{ rotateY: 0 }}
                 transition={{ type: "spring", stiffness: 100, damping: 20, delay: 0.35 }}
                 style={{ transformStyle: 'preserve-3d', width: '100%', height: '100%' }}
+                whileHover={{ y: -18, scale: 1.08, rotate: rotate * 0.15, filter: 'drop-shadow(0 0 18px rgba(34,211,238,0.22))' }}
               >
                 <CardComponent
                   card={card}
@@ -99,7 +116,7 @@ export default function HandArea() {
                 />
               </motion.div>
             </motion.div>
-          ))}
+          )})}
         </AnimatePresence>
         {state.hand.length === 0 && (
           <p className="text-slate-500 text-xs italic">No cards in hand</p>
