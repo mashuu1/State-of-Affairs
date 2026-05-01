@@ -123,7 +123,7 @@ export default function PlayerHUD() {
   const corruptionCount = state.agendaSlots.reduce((acc, slot) => acc + (slot?.corruptionToken ? 1 : 0), 0);
 
   return (
-    <div className="gov-hud" style={{ fontFamily: "var(--font-body)" }}>
+    <div className="gov-hud gov-corruption-hover" style={{ fontFamily: "var(--font-body)" }}>
       <div className="gov-hud-glass">
         <div className="gov-hud-scan" />
         <div className="gov-hud-grid">
@@ -149,7 +149,7 @@ export default function PlayerHUD() {
           </div>
 
           {/* CORRUPTION */}
-          <div className="gov-hud-cell">
+          <div className="gov-hud-cell gov-corruption-cell">
             <div className="gov-hud-kicker-lg gov-heading" style={{ color: '#8b2b2b' }}>CORRUPTION</div>
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-3">
@@ -170,6 +170,14 @@ export default function PlayerHUD() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Hover tooltip — outside glass to avoid overflow:hidden clipping */}
+      <div className="gov-corruption-tooltip">
+        <div className="gov-corruption-tooltip-title">What is Corruption?</div>
+        <p>Corruption tokens are placed on your projects when the AI catches you building through dishonest means.</p>
+        <p>Corrupted projects cannot be upgraded and will count against you at the end of the game.</p>
+        <p>Use the <strong>Purify</strong> action to cleanse your projects — but it comes at a cost.</p>
       </div>
     </div>
   );
